@@ -7,37 +7,47 @@ export default async function (request) {
   // 构造目标官网地址
   const targetUrl = new URL(url.pathname + url.search, 'https://wiki.guildwars2.com');
 
-  // 1. 深度克隆并清理头部
-  const headers = new Headers();
+  const headers = new Headers(request.headers);
   headers.set('Host', 'wiki.guildwars2.com');
-  headers.set('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
-  headers.set('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8');
-  headers.set('Accept-Language', 'zh-CN,zh;q=0.9,en;q=0.8');
   headers.set('Referer', 'https://wiki.guildwars2.com/');
+  // 抹除可能导致重定向的 Vercel 特征
+  headers.delete('x-vercel-id');
+  headers.delete('x-forwarded-for');
 
-  // 2. 发起脱敏请求
   const response = await fetch(targetUrl.toString(), {
     method: request.method,
     headers: headers,
-    redirect: 'follow',
+    redirect: 'manual', // 【关键】手动处理重定向，不让它自动跳走
   });
 
-  // 3. 如果依然 403，尝试处理
-  if (response.status === 403) {
-    return new Response("官网屏蔽了该边缘节点，请尝试在 Vercel 重新部署以更换 IP。", { status: 403 });
+  // 1. 拦截官方的重定向指令 (301/302)
+  if ([301, 302, 307, 308].includes(response.status)) {
+    const location = response.headers.get('Location');
+    if (location) {
+      const newLocation = location.replace('https://wiki.guildwars2.com', `https://${url.hostname}`);
+      return new Response(null, {
+        status: response.status,
+        headers: { 'Location': newLocation }
+      });
+    }
   }
 
-  // 4. 处理域名替换（把官网链接换成你的）
+  // 2. 如果是 403，说明 IP 还是被 AWS 盯上了
+  if (response.status === 403) {
+    return new Response("触发了官网 AWS 的深度拦截，请尝试在 Vercel 重新部署以获得新 IP。", { status: 403 });
+  }
+
+  // 3. 处理 HTML 里的链接替换
   const contentType = response.headers.get('content-type');
   if (contentType && contentType.includes('text/html')) {
     let text = await response.text();
-    // 替换所有官网链接为你的域名
-    text = text.替换(/wiki\.guildwars2\.com/g, 'wiki.gw2.org.cn');
+    // 替换所有官方域名为当前访问的域名
+    text = text.replace(/wiki\.guildwars2\.com/g, url.hostname);
     return new Response(text, {
       headers: { 'content-type': 'text/html; charset=utf-8' },
     });
   }
 
-  // 5. 其他资源（图片、CSS）直接返回
+  // 4. 图片、JS、CSS 等静态资源正常返回
   return response;
 }
