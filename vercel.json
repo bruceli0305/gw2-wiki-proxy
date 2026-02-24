@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "https://wiki.guildwars2.com/$1"
+    }
+  ]
+}
