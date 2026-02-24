@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "https://wiki.guildwars2.com/$1"
+      "destination": "/api/proxy"
     }
   ]
 }
